@@ -1,30 +1,15 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import os
 import sys
 from datetime import datetime
-import matplotlib
-from matplotlib import font_manager
+import altair as alt  # 使用altair代替matplotlib
 
-# ==================== 1. 解决中文显示问题 ====================
-# 方法1：设置系统字体
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans', 'Arial Unicode MS']
-plt.rcParams['axes.unicode_minus'] = False
-
-# 方法2：下载中文字体（如果系统没有）
-try:
-    # 检查是否有中文字体
-    font_list = [f.name for f in font_manager.fontManager.ttflist]
-    has_chinese_font = any('hei' in f.lower() or 'yahei' in f.lower() or 'sim' in f.lower() or 'kai' in f.lower() for f in font_list)
-    
-    if not has_chinese_font:
-        # 使用内置的DejaVu字体，它支持中文
-        plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
-        st.info("⚠️ 使用备用字体显示中文")
-except:
-    pass
+# 强制UTF-8编码
+if hasattr(sys.stdout, 'encoding'):
+    if sys.stdout.encoding != 'UTF-8':
+        sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
 
 # 设置页面
 st.set_page_config(
@@ -171,11 +156,6 @@ with st.sidebar:
     
     st.markdown("---")
     st.header("📊 快速查看")
-    if st.button("显示所有菜品"):
-        st.session_state.show_all = True
-    
-    if st.button("显示TOP10菜品"):
-        st.session_state.show_top10 = True
 
 # ==================== 主界面 - 5个标签页 ====================
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠 首页", "🔍 查询菜品", "⭐ 推荐", "📝 评分评价", "📊 数据分析"])
@@ -243,7 +223,7 @@ with tab3:
         
         selected_keywords = st.multiselect(
             "选择你感兴趣的关键词（可多选）",
-            unique_keywords[:30]  # 只显示前30个
+            unique_keywords[:30]
         )
         
         if st.button("开始推荐") and selected_keywords:
@@ -318,13 +298,13 @@ with tab4:
                     st.warning("请先输入评价内容")
 
 with tab5:
-    st.header("数据分析")
+    st.header("📊 数据分析")
     
     if system.dishes_data is not None:
         # 创建图表选项
         chart_option = st.selectbox(
             "选择图表类型",
-            ["请选择", "TOP10菜品排名", "各维度得分分布"]
+            ["请选择", "TOP10菜品排名", "各维度得分分布", "雷达图分析"]
         )
         
         if chart_option == "TOP10菜品排名":
@@ -332,36 +312,17 @@ with tab5:
             
             top_dishes = system.dishes_data.sort_values('综合得分', ascending=False).head(10)
             
-            # 修复：创建图表时指定字体
-            fig, ax = plt.subplots(figsize=(10, 6))
+            # 方法1：使用altair创建交互式图表（无中文问题）
+            chart = alt.Chart(top_dishes).mark_bar(color='steelblue').encode(
+                x=alt.X('综合得分:Q', title='综合得分'),
+                y=alt.Y('菜品名称:N', sort='-x', title='菜品名称')
+            ).properties(
+                width=600,
+                height=400,
+                title='TOP10 菜品综合得分排名'
+            )
             
-            # 使用水平条形图
-            y_pos = np.arange(len(top_dishes))
-            bars = ax.barh(y_pos, top_dishes['综合得分'], color='steelblue', height=0.6)
-            
-            # 设置y轴标签（菜品名称）
-            ax.set_yticks(y_pos)
-            
-            # 关键修复：使用自定义函数确保中文显示
-            try:
-                # 尝试直接设置中文标签
-                ax.set_yticklabels(top_dishes['菜品名称'].tolist())
-            except:
-                # 如果失败，使用英文替代
-                ax.set_yticklabels([f"Dish {i+1}" for i in range(len(top_dishes))])
-            
-            ax.set_xlabel('综合得分', fontsize=12)
-            ax.set_title('TOP10 菜品综合得分排名', fontsize=16, pad=20)
-            ax.invert_yaxis()  # 最高分在最上面
-            
-            # 在条形图上添加数值
-            for bar in bars:
-                width = bar.get_width()
-                ax.text(width, bar.get_y() + bar.get_height()/2,
-                       f'{width:.2f}', ha='left', va='center', fontsize=10)
-            
-            plt.tight_layout()
-            st.pyplot(fig)
+            st.altair_chart(chart, use_container_width=True)
             
             # 同时显示表格
             st.write("**详细数据：**")
@@ -370,33 +331,25 @@ with tab5:
         elif chart_option == "各维度得分分布":
             st.subheader("📈 各维度得分分布")
             
-            fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+            # 使用streamlit原生图表
+            col1, col2 = st.columns(2)
             
-            # 创建直方图 - 使用简化的标题
-            axes[0, 0].hist(system.dishes_data['口味得分'], bins=5, alpha=0.7, color='skyblue', edgecolor='black')
-            axes[0, 0].set_title('口味得分', fontsize=14)
-            axes[0, 0].set_xlabel('分数')
-            axes[0, 0].set_ylabel('菜品数量')
+            with col1:
+                st.write("**口味得分分布**")
+                st.bar_chart(system.dishes_data['口味得分'].value_counts().sort_index())
+                
+                st.write("**营养得分分布**")
+                st.bar_chart(system.dishes_data['营养得分'].value_counts().sort_index())
             
-            axes[0, 1].hist(system.dishes_data['营养得分'], bins=5, alpha=0.7, color='lightgreen', edgecolor='black')
-            axes[0, 1].set_title('营养得分', fontsize=14)
-            axes[0, 1].set_xlabel('分数')
-            axes[0, 1].set_ylabel('菜品数量')
-            
-            axes[1, 0].hist(system.dishes_data['热度得分'], bins=5, alpha=0.7, color='salmon', edgecolor='black')
-            axes[1, 0].set_title('热度得分', fontsize=14)
-            axes[1, 0].set_xlabel('分数')
-            axes[1, 0].set_ylabel('菜品数量')
-            
-            axes[1, 1].hist(system.dishes_data['性价比得分'], bins=5, alpha=0.7, color='gold', edgecolor='black')
-            axes[1, 1].set_title('性价比得分', fontsize=14)
-            axes[1, 1].set_xlabel('分数')
-            axes[1, 1].set_ylabel('菜品数量')
-            
-            plt.tight_layout()
-            st.pyplot(fig)
+            with col2:
+                st.write("**热度得分分布**")
+                st.bar_chart(system.dishes_data['热度得分'].value_counts().sort_index())
+                
+                st.write("**性价比得分分布**")
+                st.bar_chart(system.dishes_data['性价比得分'].value_counts().sort_index())
             
             # 显示统计信息
+            st.subheader("📊 统计信息")
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("平均口味", f"{system.dishes_data['口味得分'].mean():.1f}")
@@ -406,6 +359,61 @@ with tab5:
                 st.metric("平均热度", f"{system.dishes_data['热度得分'].mean():.1f}")
             with col4:
                 st.metric("平均性价比", f"{system.dishes_data['性价比得分'].mean():.1f}")
+        
+        elif chart_option == "雷达图分析":
+            st.subheader("📡 菜品雷达图分析")
+            
+            selected_dish = st.selectbox(
+                "选择要分析的菜品",
+                system.dishes_data['菜品名称'].tolist(),
+                key="radar_select"
+            )
+            
+            if selected_dish:
+                dish = system.dishes_data[system.dishes_data['菜品名称'] == selected_dish].iloc[0]
+                
+                # 创建雷达图数据
+                radar_data = pd.DataFrame({
+                    '维度': ['口味', '营养', '热度', '性价比'],
+                    '得分': [
+                        dish['口味得分'],
+                        dish['营养得分'],
+                        dish['热度得分'],
+                        dish['性价比得分']
+                    ]
+                })
+                
+                # 使用altair创建雷达图
+                base = alt.Chart(radar_data).encode(
+                    theta=alt.Theta("维度:N", sort=None),
+                    radius=alt.Radius("得分:Q", scale=alt.Scale(type="linear", zero=True, rangeMin=20)),
+                    color=alt.value("#1f77b4")
+                )
+                
+                line = base.mark_line()
+                points = base.mark_point(filled=True, size=100)
+                text = base.mark_text(align="center", baseline="middle", fontSize=12).encode(
+                    text="得分:Q"
+                )
+                
+                radar_chart = (line + points + text).properties(
+                    width=400,
+                    height=400,
+                    title=f'{selected_dish} - 多维评分'
+                )
+                
+                st.altair_chart(radar_chart, use_container_width=True)
+                
+                # 显示具体数值
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("口味", dish['口味得分'])
+                with col2:
+                    st.metric("营养", dish['营养得分'])
+                with col3:
+                    st.metric("热度", dish['热度得分'])
+                with col4:
+                    st.metric("性价比", dish['性价比得分'])
 
 # ==================== 页脚 ====================
 st.markdown("---")
