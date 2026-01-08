@@ -92,11 +92,11 @@ class CanteenRecommendationSystem:
     def load_user_data(self):
         """加载用户历史数据"""
         try:
-            if os.path.exists("用户评分记录.csv"):
-                self.user_ratings = pd.read_csv("用户评分记录.csv", encoding='utf-8')
+            if os.path.exists("comments.csv"):
+                self.user_ratings = pd.read_csv("comments.csv", encoding='utf-8')
             
-            if os.path.exists("用户评价记录.csv"):
-                self.user_reviews = pd.read_csv("用户评价记录.csv", encoding='utf-8')
+            if os.path.exists("comments.csv"):
+                self.user_reviews = pd.read_csv("comments.csv", encoding='utf-8')
                 
         except:
             pass
