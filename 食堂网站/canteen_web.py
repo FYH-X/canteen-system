@@ -13,8 +13,9 @@ st.set_page_config(
 )
 
 # 设置中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei']
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
+plt.rcParams['font.size'] = 14  # 设置字体大小
 
 class CanteenRecommendationSystem:
     def __init__(self):
