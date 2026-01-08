@@ -4,12 +4,9 @@ import numpy as np
 import os
 import sys
 from datetime import datetime
-import altair as alt  # 使用altair代替matplotlib
-
-# 强制UTF-8编码
-if hasattr(sys.stdout, 'encoding'):
-    if sys.stdout.encoding != 'UTF-8':
-        sys.stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
+import matplotlib
+matplotlib.use('Agg')  # 防止GUI错误
+import matplotlib.pyplot as plt
 
 # 设置页面
 st.set_page_config(
@@ -17,6 +14,9 @@ st.set_page_config(
     page_icon="🍽️",
     layout="wide"
 )
+
+# 禁用matplotlib的交互模式
+plt.ioff()
 
 class CanteenRecommendationSystem:
     def __init__(self):
@@ -29,9 +29,6 @@ class CanteenRecommendationSystem:
     def load_dishes_data(self):
         """加载菜品数据"""
         try:
-            # 尝试多种文件路径和编码
-            file_found = False
-            
             # 检查文件是否存在
             if os.path.exists("data.csv"):
                 filename = "data.csv"
@@ -42,17 +39,16 @@ class CanteenRecommendationSystem:
                 return False
             
             # 尝试多种编码
-            encodings = ['utf-8', 'gbk', 'gb18030', 'latin1', 'cp1252']
+            encodings = ['utf-8', 'gbk', 'gb18030', 'latin1']
             for encoding in encodings:
                 try:
                     self.dishes_data = pd.read_csv(filename, encoding=encoding)
-                    file_found = True
                     break
                 except:
                     continue
             
-            if not file_found:
-                st.error("❌ 无法读取数据文件（编码问题）")
+            if self.dishes_data is None:
+                st.error("❌ 无法读取数据文件")
                 return False
             
             # 修复列名
@@ -138,6 +134,38 @@ class CanteenRecommendationSystem:
         self.user_reviews.to_csv("用户评价记录.csv", index=False, encoding='utf-8')
         
         return sentiment_score
+    
+    def recommend_by_keywords(self, keywords):
+        """根据关键词推荐"""
+        recommendations = []
+        
+        for _, dish in self.dishes_data.iterrows():
+            dish_keywords = []
+            if pd.notna(dish.get('关键词', '')):
+                dish_keywords = [k.strip().lower() for k in str(dish['关键词']).split(',')]
+            
+            match_count = 0
+            for kw in keywords:
+                if kw.lower() in dish_keywords:
+                    match_count += 1
+            
+            if match_count > 0:
+                match_score = match_count / len(keywords)
+                total_score = match_score * 0.6 + dish.get('综合得分', 0) * 0.4
+                recommendations.append({
+                    '菜品名称': dish['菜品名称'],
+                    '综合得分': dish.get('综合得分', 0),
+                    '推荐得分': round(total_score, 2),
+                    '匹配关键词数': match_count,
+                    '口味': dish.get('口味得分', 0),
+                    '营养': dish.get('营养得分', 0),
+                    '热度': dish.get('热度得分', 0),
+                    '性价比': dish.get('性价比得分', 0),
+                    '关键词': dish.get('关键词', '')
+                })
+        
+        recommendations.sort(key=lambda x: (x['匹配关键词数'], x['推荐得分']), reverse=True)
+        return recommendations[:5]
 
 # ==================== 创建系统实例 ====================
 system = CanteenRecommendationSystem()
@@ -157,7 +185,7 @@ with st.sidebar:
     st.markdown("---")
     st.header("📊 快速查看")
 
-# ==================== 主界面 - 5个标签页 ====================
+# ==================== 主界面 ====================
 tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏠 首页", "🔍 查询菜品", "⭐ 推荐", "📝 评分评价", "📊 数据分析"])
 
 with tab1:
@@ -167,16 +195,26 @@ with tab1:
     if system.dishes_data is not None:
         st.success(f"✅ 系统中共有 **{len(system.dishes_data)}** 个菜品")
         
+        # 显示TOP5菜品
+        st.subheader("🏆 TOP 5 菜品")
+        top5 = system.dishes_data.sort_values('综合得分', ascending=False).head(5)
+        
+        for i, (_, dish) in enumerate(top5.iterrows(), 1):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"{i}. **{dish['菜品名称']}**")
+            with col2:
+                st.metric("", f"{dish['综合得分']}")
+        
         # 显示部分菜品
-        st.subheader("🍲 热门菜品展示")
+        st.subheader("🍲 菜品展示")
         cols = st.columns(3)
-        for i, (_, dish) in enumerate(system.dishes_data.head(6).iterrows()):
+        for i, (_, dish) in enumerate(system.dishes_data.head(9).iterrows()):
             with cols[i % 3]:
-                st.metric(
-                    label=dish['菜品名称'],
-                    value=f"{dish['综合得分']}"
-                )
-                st.caption(f"口味:{dish['口味得分']} 营养:{dish['营养得分']}")
+                with st.container():
+                    st.write(f"**{dish['菜品名称']}**")
+                    st.write(f"综合得分：{dish['综合得分']}")
+                    st.progress(dish['综合得分'] / 5)
 
 with tab2:
     st.header("菜品查询")
@@ -205,6 +243,22 @@ with tab2:
             with col5:
                 st.metric("综合", dish_info['综合得分'])
             
+            # 进度条显示
+            st.write("**各维度评分：**")
+            cols = st.columns(4)
+            with cols[0]:
+                st.write("口味")
+                st.progress(dish_info['口味得分'] / 5)
+            with cols[1]:
+                st.write("营养")
+                st.progress(dish_info['营养得分'] / 5)
+            with cols[2]:
+                st.write("热度")
+                st.progress(dish_info['热度得分'] / 5)
+            with cols[3]:
+                st.write("性价比")
+                st.progress(dish_info['性价比得分'] / 5)
+            
             st.write(f"**关键词：** {dish_info['关键词']}")
 
 with tab3:
@@ -227,37 +281,20 @@ with tab3:
         )
         
         if st.button("开始推荐") and selected_keywords:
-            recommendations = []
-            
-            for _, dish in system.dishes_data.iterrows():
-                dish_keywords = []
-                if pd.notna(dish.get('关键词', '')):
-                    dish_keywords = [k.strip().lower() for k in str(dish['关键词']).split(',')]
-                
-                match_count = 0
-                for kw in selected_keywords:
-                    if kw.lower() in dish_keywords:
-                        match_count += 1
-                
-                if match_count > 0:
-                    match_score = match_count / len(selected_keywords)
-                    total_score = match_score * 0.6 + dish.get('综合得分', 0) * 0.4
-                    recommendations.append({
-                        '菜品名称': dish['菜品名称'],
-                        '综合得分': dish.get('综合得分', 0),
-                        '推荐得分': round(total_score, 2),
-                        '匹配关键词数': match_count
-                    })
+            recommendations = system.recommend_by_keywords(selected_keywords)
             
             if recommendations:
-                recommendations.sort(key=lambda x: (x['匹配关键词数'], x['推荐得分']), reverse=True)
-                
                 st.subheader(f"为你推荐（匹配关键词：{', '.join(selected_keywords)}）")
                 
-                for i, rec in enumerate(recommendations[:5], 1):
-                    with st.expander(f"{i}. {rec['菜品名称']} (推荐分：{rec['推荐得分']})"):
-                        st.write(f"综合得分：{rec['综合得分']}")
+                for i, rec in enumerate(recommendations, 1):
+                    with st.expander(f"{i}. {rec['菜品名称']} (推荐得分：{rec['推荐得分']:.2f})"):
+                        cols = st.columns(4)
+                        cols[0].metric("口味", rec['口味'])
+                        cols[1].metric("营养", rec['营养'])
+                        cols[2].metric("热度", rec['热度'])
+                        cols[3].metric("性价比", rec['性价比'])
                         st.write(f"匹配关键词数：{rec['匹配关键词数']}")
+                        st.write(f"关键词：{rec['关键词']}")
             else:
                 st.warning("没有找到匹配的菜品")
 
@@ -298,122 +335,79 @@ with tab4:
                     st.warning("请先输入评价内容")
 
 with tab5:
-    st.header("📊 数据分析")
+    st.header("数据分析")
     
     if system.dishes_data is not None:
-        # 创建图表选项
-        chart_option = st.selectbox(
-            "选择图表类型",
-            ["请选择", "TOP10菜品排名", "各维度得分分布", "雷达图分析"]
-        )
+        # 方法1：使用表格和进度条代替图表
+        option = st.selectbox("选择分析类型", ["TOP10菜品", "得分统计", "维度对比"])
         
-        if chart_option == "TOP10菜品排名":
-            st.subheader("🏆 TOP10菜品综合得分排名")
+        if option == "TOP10菜品":
+            st.subheader("🏆 TOP10菜品排名")
             
-            top_dishes = system.dishes_data.sort_values('综合得分', ascending=False).head(10)
+            top10 = system.dishes_data.sort_values('综合得分', ascending=False).head(10)
             
-            # 方法1：使用altair创建交互式图表（无中文问题）
-            chart = alt.Chart(top_dishes).mark_bar(color='steelblue').encode(
-                x=alt.X('综合得分:Q', title='综合得分'),
-                y=alt.Y('菜品名称:N', sort='-x', title='菜品名称')
-            ).properties(
-                width=600,
-                height=400,
-                title='TOP10 菜品综合得分排名'
-            )
-            
-            st.altair_chart(chart, use_container_width=True)
-            
-            # 同时显示表格
-            st.write("**详细数据：**")
-            st.dataframe(top_dishes[['菜品名称', '综合得分', '口味得分', '营养得分', '热度得分', '性价比得分']])
+            for i, (_, dish) in enumerate(top10.iterrows(), 1):
+                with st.container():
+                    col1, col2, col3 = st.columns([2, 3, 1])
+                    with col1:
+                        st.write(f"{i}. **{dish['菜品名称']}**")
+                    with col2:
+                        st.progress(dish['综合得分'] / 5)
+                    with col3:
+                        st.write(f"{dish['综合得分']}")
+                    st.write(f"口味:{dish['口味得分']} 营养:{dish['营养得分']} 热度:{dish['热度得分']} 性价比:{dish['性价比得分']}")
+                    st.markdown("---")
         
-        elif chart_option == "各维度得分分布":
-            st.subheader("📈 各维度得分分布")
+        elif option == "得分统计":
+            st.subheader("📊 各维度统计")
             
-            # 使用streamlit原生图表
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.write("**口味得分分布**")
-                st.bar_chart(system.dishes_data['口味得分'].value_counts().sort_index())
-                
-                st.write("**营养得分分布**")
-                st.bar_chart(system.dishes_data['营养得分'].value_counts().sort_index())
-            
-            with col2:
-                st.write("**热度得分分布**")
-                st.bar_chart(system.dishes_data['热度得分'].value_counts().sort_index())
-                
-                st.write("**性价比得分分布**")
-                st.bar_chart(system.dishes_data['性价比得分'].value_counts().sort_index())
-            
-            # 显示统计信息
-            st.subheader("📊 统计信息")
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("平均口味", f"{system.dishes_data['口味得分'].mean():.1f}")
+                st.write(f"最高: {system.dishes_data['口味得分'].max():.1f}")
+                st.write(f"最低: {system.dishes_data['口味得分'].min():.1f}")
+            
             with col2:
                 st.metric("平均营养", f"{system.dishes_data['营养得分'].mean():.1f}")
+                st.write(f"最高: {system.dishes_data['营养得分'].max():.1f}")
+                st.write(f"最低: {system.dishes_data['营养得分'].min():.1f}")
+            
             with col3:
                 st.metric("平均热度", f"{system.dishes_data['热度得分'].mean():.1f}")
+                st.write(f"最高: {system.dishes_data['热度得分'].max():.1f}")
+                st.write(f"最低: {system.dishes_data['热度得分'].min():.1f}")
+            
             with col4:
                 st.metric("平均性价比", f"{system.dishes_data['性价比得分'].mean():.1f}")
+                st.write(f"最高: {system.dishes_data['性价比得分'].max():.1f}")
+                st.write(f"最低: {system.dishes_data['性价比得分'].min():.1f}")
         
-        elif chart_option == "雷达图分析":
-            st.subheader("📡 菜品雷达图分析")
+        elif option == "维度对比":
+            st.subheader("📈 维度对比")
             
             selected_dish = st.selectbox(
-                "选择要分析的菜品",
-                system.dishes_data['菜品名称'].tolist(),
-                key="radar_select"
+                "选择菜品",
+                system.dishes_data['菜品名称'].tolist()
             )
             
             if selected_dish:
                 dish = system.dishes_data[system.dishes_data['菜品名称'] == selected_dish].iloc[0]
                 
-                # 创建雷达图数据
-                radar_data = pd.DataFrame({
-                    '维度': ['口味', '营养', '热度', '性价比'],
-                    '得分': [
-                        dish['口味得分'],
-                        dish['营养得分'],
-                        dish['热度得分'],
-                        dish['性价比得分']
-                    ]
-                })
+                # 使用简单的条形显示
+                st.write("**各维度评分：**")
                 
-                # 使用altair创建雷达图
-                base = alt.Chart(radar_data).encode(
-                    theta=alt.Theta("维度:N", sort=None),
-                    radius=alt.Radius("得分:Q", scale=alt.Scale(type="linear", zero=True, rangeMin=20)),
-                    color=alt.value("#1f77b4")
-                )
+                metrics = ['口味得分', '营养得分', '热度得分', '性价比得分']
+                colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
                 
-                line = base.mark_line()
-                points = base.mark_point(filled=True, size=100)
-                text = base.mark_text(align="center", baseline="middle", fontSize=12).encode(
-                    text="得分:Q"
-                )
-                
-                radar_chart = (line + points + text).properties(
-                    width=400,
-                    height=400,
-                    title=f'{selected_dish} - 多维评分'
-                )
-                
-                st.altair_chart(radar_chart, use_container_width=True)
-                
-                # 显示具体数值
-                col1, col2, col3, col4 = st.columns(4)
-                with col1:
-                    st.metric("口味", dish['口味得分'])
-                with col2:
-                    st.metric("营养", dish['营养得分'])
-                with col3:
-                    st.metric("热度", dish['热度得分'])
-                with col4:
-                    st.metric("性价比", dish['性价比得分'])
+                for metric, color in zip(metrics, colors):
+                    score = dish[metric]
+                    col1, col2, col3 = st.columns([2, 5, 1])
+                    with col1:
+                        st.write(metric.replace('得分', ''))
+                    with col2:
+                        st.progress(score / 5)
+                    with col3:
+                        st.write(f"{score}")
 
 # ==================== 页脚 ====================
 st.markdown("---")
