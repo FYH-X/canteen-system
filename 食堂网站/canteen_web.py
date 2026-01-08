@@ -22,16 +22,16 @@ class CanteenRecommendationSystem:
         self.user_ratings = pd.DataFrame(columns=['用户ID', '菜品名称', '评分'])
         self.user_reviews = pd.DataFrame(columns=['用户ID', '菜品名称', '评价内容', '情感得分', '评价时间'])
         self.current_user = "guest"
-        # 不要在这里调用 load_dishes_data()   
-  
-  def load_dishes_data(self):
+        # 不要在这里调用 load_dishes_data()
+    
+    def load_dishes_data(self):
         """加载菜品数据"""
         try:
             import os
             
             # 显示当前目录和文件（调试用）
-            st.write("当前目录：", os.getcwd())
-            st.write("文件列表：", os.listdir("."))
+            st.write("🔍 当前目录：", os.getcwd())
+            st.write("📁 文件列表：", os.listdir("."))
             
             # 自动查找数据文件（支持多个名字）
             filenames_to_try = ["data.csv", "食堂菜品数据.csv", "dishes.csv"]
@@ -41,24 +41,28 @@ class CanteenRecommendationSystem:
             
             for filename in filenames_to_try:
                 if os.path.exists(filename):
-                    st.write(f"找到文件：{filename}")
+                    st.success(f"✅ 找到文件：{filename}")
                     for encoding in encodings_to_try:
                         try:
                             self.dishes_data = pd.read_csv(filename, encoding=encoding)
-                            st.write(f"成功读取：{filename}，编码：{encoding}")
+                            st.success(f"✅ 成功读取：{filename}（{encoding}编码）")
                             file_found = True
                             break
                         except Exception as e:
-                            st.write(f"{encoding}编码失败：{str(e)}")
+                            st.write(f"⚠️ {encoding}编码失败")
                             continue
                     if file_found:
                         break
             
             if not file_found:
                 st.error("❌ 找不到数据文件！")
-                # 显示所有文件详情
+                st.write("📋 当前文件夹内容：")
                 for f in os.listdir("."):
-                    st.write(f"- {f} (大小：{os.path.getsize(f)} bytes)")
+                    if os.path.isfile(f):
+                        file_size = os.path.getsize(f)
+                        st.write(f"- 📄 {f} (大小：{file_size} bytes)")
+                    else:
+                        st.write(f"- 📁 {f} (文件夹)")
                 return False
             
             # 修复列名
@@ -87,16 +91,17 @@ class CanteenRecommendationSystem:
             return True
             
         except Exception as e:
-            st.error(f"加载数据失败：{str(e)}")
-            return False    
+            st.error(f"❌ 加载数据失败：{str(e)}")
+            return False
+    
     def load_user_data(self):
         """加载用户历史数据"""
         try:
-            if os.path.exists("comments.csv"):
-                self.user_ratings = pd.read_csv("comments.csv", encoding='utf-8')
+            if os.path.exists("用户评分记录.csv"):
+                self.user_ratings = pd.read_csv("用户评分记录.csv", encoding='utf-8')
             
-            if os.path.exists("comments.csv"):
-                self.user_reviews = pd.read_csv("comments.csv", encoding='utf-8')
+            if os.path.exists("用户评价记录.csv"):
+                self.user_reviews = pd.read_csv("用户评价记录.csv", encoding='utf-8')
                 
         except:
             pass
@@ -109,10 +114,15 @@ st.title("🍽️ 食堂菜品评分与推荐系统")
 st.markdown("---")
 
 # 先加载数据
-if system.dishes_data is None:
-    if not system.load_dishes_data():
-        st.error("无法加载菜品数据，请检查数据文件！")
-        st.stop()  # 停止执行后面的代码
+with st.spinner("正在加载菜品数据..."):
+    if system.dishes_data is None:
+        if not system.load_dishes_data():
+            st.error("无法加载菜品数据，请检查数据文件！")
+            st.stop()  # 停止执行后面的代码
+
+# 显示成功信息
+if system.dishes_data is not None:
+    st.success(f"✅ 数据加载成功！共有 {len(system.dishes_data)} 个菜品")
 
 # 侧边栏 - 用户登录
 with st.sidebar:
